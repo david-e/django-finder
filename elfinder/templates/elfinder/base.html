@@ -1,4 +1,4 @@
-{% extends 'admin/base_site.html' %}
+{% extends base_template|default:'admin/base_site.html' %}
 {% load i18n %}{% load admin_static %}
 
 {% block extrastyle %}
@@ -81,12 +81,13 @@
 <script src="{% static "elfinder/js/commands/netmount.js" %}" type="text/javascript" charset="utf-8"></script>	
 
 <!-- elfinder languages -->
+<script src="{% static "elfinder/js/i18n/elfinder.en.js" %}" type="text/javascript" charset="utf-8"></script>
+{% comment %}
 <script src="{% static "elfinder/js/i18n/elfinder.ar.js" %}" type="text/javascript" charset="utf-8"></script>
 <script src="{% static "elfinder/js/i18n/elfinder.bg.js" %}" type="text/javascript" charset="utf-8"></script>
 <script src="{% static "elfinder/js/i18n/elfinder.ca.js" %}" type="text/javascript" charset="utf-8"></script>
 <script src="{% static "elfinder/js/i18n/elfinder.cs.js" %}" type="text/javascript" charset="utf-8"></script>
 <script src="{% static "elfinder/js/i18n/elfinder.de.js" %}" type="text/javascript" charset="utf-8"></script>
-<script src="{% static "elfinder/js/i18n/elfinder.en.js" %}" type="text/javascript" charset="utf-8"></script>
 <script src="{% static "elfinder/js/i18n/elfinder.es.js" %}" type="text/javascript" charset="utf-8"></script>
 <script src="{% static "elfinder/js/i18n/elfinder.fr.js" %}" type="text/javascript" charset="utf-8"></script>
 <script src="{% static "elfinder/js/i18n/elfinder.hu.js" %}" type="text/javascript" charset="utf-8"></script>
@@ -96,6 +97,7 @@
 <script src="{% static "elfinder/js/i18n/elfinder.pt_BR.js" %}" type="text/javascript" charset="utf-8"></script>
 <script src="{% static "elfinder/js/i18n/elfinder.ru.js" %}" type="text/javascript" charset="utf-8"></script>
 <script src="{% static "elfinder/js/i18n/elfinder.zh_CN.js" %}" type="text/javascript" charset="utf-8"></script>
+{% endcomment %}
 
 <!-- elfinder dialog -->
 <script src="{% static "elfinder/js/jquery.dialogelfinder.js" %}" type="text/javascript" charset="utf-8"></script>
@@ -114,7 +116,7 @@
 <script type="text/javascript" charset="utf-8">
     $().ready(function() {
         var elf = $('#elfinder').elfinder({
-            url : '{% url elfinder_connector coll_id|default:0 %}',
+            url : '{% url elfinder_connector coll_id %}',
             places : 'h',
             rememberLastDir : false,
             placesFirst : false,
