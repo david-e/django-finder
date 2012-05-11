@@ -47,7 +47,7 @@ class DirectoryNode(INode):
                                related_name='dirs',
                                verbose_name=_('parent node'))
 
-    class Meta(INode.Meta):
+    class Meta:
         verbose_name = _('Directory')
         verbose_name_plural = _('Directories')
         permissions = (
@@ -67,7 +67,7 @@ class FileNode(INode):
     data = models.FileField(_('File'), max_length=256,
                             upload_to=get_path_for_upload)
 
-    class Meta(INode.Meta):
+    class Meta:
         verbose_name = _('File')
         verbose_name_plural = _('Files')
         permissions = (
