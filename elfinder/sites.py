@@ -10,7 +10,7 @@ from django.views.decorators.csrf import csrf_protect
 class ElfinderSite(object):
     index_template = 'elfinder/base.html'
     title = 'File manager'
-    default_options = {
+    _options = {
         'ui_options': {
             'toolbar': [
                 ['back', 'forward'],
@@ -47,11 +47,11 @@ class ElfinderSite(object):
         self.app_name = app_name
         # options dictionary based on default_options
         self.ui_options = dict(
-            self.default_options['ui_options'], **ui_options)
+            self._options['ui_options'], **ui_options)
         self.context_menu = dict(
-            self.default_options['context_menu'], **context_menu)
+            self._options['context_menu'], **context_menu)
         self.init_params = dict(
-            self.default_options['init_params'], **init_params)
+            self._options['init_params'], **init_params)
 
     def manage_view(self, view, cacheable=False):
         """
