@@ -10,29 +10,48 @@ from django.views.decorators.csrf import csrf_protect
 class ElfinderSite(object):
     index_template = 'elfinder/base.html'
     title = 'File manager'
-    uiOptions = {
-        'toolbar': [
-            ['back', 'forward'],
-            ['download', 'mkdir', 'mkfile', 'upload'],
-            ['copy', 'cut', 'paste'],
-            ['rm'],
-            ['rename'],
-            ['view'],
-        ]
-    }
-    contextmenu = {
-        'navbar': ['open', '|', 'copy', 'cut', 'paste', '|', 'rm'],
-        'cwd': ['reload', 'back', '|', 'mkdir', 'mkfile', 'paste' '|',
-                'upload'],
-        'files': ['edit', 'open', '|', 'copy', 'cut', 'paste', '|',
-              'rm', 'rename']
-        
+    default_options = {
+        'ui_options': {
+            'toolbar': [
+                ['back', 'forward'],
+                ['download', 'mkdir', 'mkfile', 'upload'],
+                ['copy', 'cut', 'paste'],
+                ['rm'],
+                ['rename'],
+                ['view'],
+            ]
+        },
+        'context_menu': {
+            'navbar': ['open', '|', 'copy', 'cut', 'paste', '|', 'rm'],
+            'cwd': ['reload', 'back', '|', 'mkdir', 'mkfile', 'paste' '|',
+                    'upload'],
+            'files': ['edit', 'open', '|', 'copy', 'cut', 'paste', '|',
+                  'rm', 'rename']
+        },
+        'init_params': {
+            'api': '2.0',
+            'uplMaxSize': '1024M', 
+            'options': {
+                'separator': '/',
+                'disabled': [],
+                'archivers': {'create': [], 'extract': []},
+                'copyOverwrite': 1,
+            }
+        }
     }
 
-    def __init__(self, finderDriver, name='elfinder', app_name='elfinder'):
+    def __init__(self, finderDriver, name='elfinder', app_name='elfinder',
+                 ui_options={}, context_menu={}, init_params={}):
         self.driver = finderDriver
         self.name = name
         self.app_name = app_name
+        # options dictionary based on default_options
+        self.ui_options = dict(
+            self.default_options['ui_options'], **ui_options)
+        self.context_menu = dict(
+            self.default_options['context_menu'], **context_menu)
+        self.init_params = dict(
+            self.default_options['init_params'], **init_params)
 
     def manage_view(self, view, cacheable=False):
         """
@@ -88,8 +107,8 @@ class ElfinderSite(object):
     def index(self, request, extra_context=None):
         context = {
             'title': self.title,
-            'contextmenu': self.contextmenu,
-            'uiOptions': self.uiOptions,
+            'contextmenu': self.context_menu,
+            'uiOptions': self.ui_options,
         }
         if extra_context:
             context.update(extra_context)
