@@ -122,24 +122,8 @@
             placesFirst : false,
             requestType: 'post',
             customData : { csrfmiddlewaretoken : '{{ csrf_token }}',  },
-            uiOptions : { toolbar : [ 
-                            ['back', 'forward'],
-                            ['download', 'mkdir', 'mkfile', 'upload'],
-                            ['copy', 'cut', 'paste'],
-                            ['rm'],
-                            ['rename'],
-                            ['view'],
-                         ]
-                        },
-            contextmenu : { navbar : ['open', '|', 'copy', 'cut', 'paste', '|',
-                                      'rm'],
-                            cwd : ['reload', 'back', '|',
-                                   'mkdir', 'mkfile', 'paste', '|',
-                                   'upload'],
-                            files : ['edit', 'open', '|',
-                                     'copy', 'cut', 'paste', '|',
-                                     'rm', 'rename'],
-                          }
+            uiOptions : {{ uiOptions|safe }},
+            contextmenu : {{ contextmenu|safe }}
         }).elfinder('instance');            
     });
 </script>

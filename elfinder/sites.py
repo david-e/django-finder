@@ -10,6 +10,24 @@ from django.views.decorators.csrf import csrf_protect
 class ElfinderSite(object):
     index_template = 'elfinder/base.html'
     title = 'File manager'
+    uiOptions = {
+        'toolbar': [
+            ['back', 'forward'],
+            ['download', 'mkdir', 'mkfile', 'upload'],
+            ['copy', 'cut', 'paste'],
+            ['rm'],
+            ['rename'],
+            ['view'],
+        ]
+    }
+    contextmenu = {
+        'navbar': ['open', '|', 'copy', 'cut', 'paste', '|', 'rm'],
+        'cwd': ['reload', 'back', '|', 'mkdir', 'mkfile', 'paste' '|',
+                'upload'],
+        'files': ['edit', 'open', '|', 'copy', 'cut', 'paste', '|',
+              'rm', 'rename']
+        
+    }
 
     def __init__(self, finderDriver, name='elfinder', app_name='elfinder'):
         self.driver = finderDriver
@@ -70,10 +88,12 @@ class ElfinderSite(object):
     def index(self, request, extra_context=None):
         context = {
             'title': self.title,
+            'contextmenu': self.contextmenu,
+            'uiOptions': self.uiOptions,
         }
         if extra_context:
             context.update(extra_context)
         return TemplateResponse(request, self.index_template, context)
-
+    
     def connector(self, request, extra_context):
         return {}
