@@ -75,5 +75,15 @@ class FileNode(INode):
             ('can_write', 'Can write'),
             ('can_exec',  'Can execute'),
         )
-        
-        
+
+
+class ImageNode(FileNode):
+    """
+    Image file
+    """
+    width = models.IntegerField(_('width'), blank=True, null=True)
+    height = models.IntegerField(_('height'), blank=True, null=True)
+
+    class Meta:
+        verbose_name = _('Image')
+        verbose_name_plural = _('Images')
