@@ -1,4 +1,4 @@
-from django.contrib.auth.models import Permission
+from django.contrib.auth.models import Permission, User
 from django.db import models
 from django.utils.translation import ugettext as _
 
@@ -10,7 +10,7 @@ from elfinder.utils import get_path_for_upload
 
 
 class INodeOptions(object):
-    DEFAULT_NAMES = ('base_permissions')
+    DEFAULT_NAMES = ('base_permissions',)
 
     def __init__(self, meta):
         self.base_permissions = False
@@ -24,22 +24,25 @@ class INodeOptions(object):
                 if attr_name in meta_attrs:
                     setattr(self, attr_name, meta_attrs.pop(attr_name))
             del self.meta
-        # add basic file/folder permissions objects
+        # add basic file/folder permissions functions
         if self.base_permissions:
             for perm in cls.PERMISSIONS:
                 def func(self, user):
-                    perm = Permission.objects.get(
+                    permission = Permission.objects.get(
                         codename='%s_%s' % (perm,
                                             cls._meta.verbose_name.lower())
                     )
-                    return user.has_perm(perm, cls)
+                    # if not a user
+                    if not hasattr(user, 'has_perm'):
+                        return False
+                    return user.has_perm(permission, cls)
                 setattr(cls, 'has_%s_permission' % perm, func) 
 
 
 class INodeBase(MPTTModelBase):
 
     def __new__(cls, name, bases, attrs):
-        inode_meta = attrs.get('INodeMeta', None)
+        inode_meta = attrs.pop('INodeMeta', None)
         new_class = super(INodeBase, cls).__new__(cls, name, bases, attrs)
         new_class.add_to_class('_inode_meta', INodeOptions(inode_meta))
         return new_class
@@ -78,17 +81,18 @@ class INode(MPTTModel):
             p, separator = '', '/'
             for arg in args:
                 if arg:
-                    p += separat + arg
+                    p += separator + arg
             return p
-        while hasattr(self, 'parent'):
+        while self.parent:
             path = join(self.parent.name, path)
         return join(path, self.name)
     path = property(__get_path__)
     
-    def has_permission(self, perm, user):
-        if perm not in self.PERMISSIONS:
-            return False
-        return getattr(self, 'has_%s_permission' % perm)(user)
+    def has_perm(self, perm, user):
+        perm_function = 'has_%s_permission' % perm
+        if hasattr(self, perm_function):
+            return getattr(self, perm_function)(user)
+        return False
 
 
 class DirectoryNode(INode):
@@ -107,7 +111,7 @@ class DirectoryNode(INode):
         base_permissions = True
 
     @property
-    def size(self):
+    def total_size(self):
         s = 0
         # size from all subdirectories
         for obj in self.children_dirs.all():
@@ -116,6 +120,10 @@ class DirectoryNode(INode):
         for obj in self.children_files.all():
             s += obj.size
         return s
+
+    @property
+    def size(self):
+        return 0
     
 
 class FileNode(INode):
