@@ -2,10 +2,8 @@ from django.contrib.auth.models import Permission, User
 from django.db import models
 from django.utils.translation import ugettext as _
 
-from mptt.models import MPTTModel, MPTTModelBase, TreeForeignKey
+from model_utils.fields import AutoCreatedField, AutoLastModifiedField, Choices
 
-import hashlib
-from model_utils.fields import AutoCreatedField, AutoLastModifiedField
 from elfinder.utils import get_path_for_upload
 
 
@@ -23,7 +21,7 @@ class INodeOptions(object):
             for attr_name in self.DEFAULT_NAMES:
                 if attr_name in meta_attrs:
                     setattr(self, attr_name, meta_attrs.pop(attr_name))
-            del self.meta
+        del self.meta
         # add basic file/folder permissions functions
         if self.base_permissions:
             for perm in cls.PERMISSIONS:
@@ -32,14 +30,15 @@ class INodeOptions(object):
                         codename='%s_%s' % (perm,
                                             cls._meta.verbose_name.lower())
                     )
-                    # if not a user
-                    if not hasattr(user, 'has_perm'):
-                        return False
-                    return user.has_perm(permission, cls)
+                    # superuser can everything
+                    if isinstance(user, User):
+                        return (user.is_superuser or
+                                user.has_perm(permission, cls))
+                    return False
                 setattr(cls, 'has_%s_permission' % perm, func) 
 
 
-class INodeBase(MPTTModelBase):
+class INodeBase(models.base.ModelBase):
 
     def __new__(cls, name, bases, attrs):
         inode_meta = attrs.pop('INodeMeta', None)
@@ -48,91 +47,117 @@ class INodeBase(MPTTModelBase):
         return new_class
 
 
-class INode(MPTTModel):
+class INode(models.Model):
     """
-    Basic inode structure. This is used as base for directory and files classes.
-    This class inherited from MPTModel, so dicrectory can use TreeForeignKey,
-    while file (and file-subclasses) uses the standard models.Model facility.
+    Basic inode structure. This is used as base for directory and files classes
     """
-    PERMISSIONS = ('read', 'write', 'execute', 'remove', 'add')
-    
     __metaclass__ = INodeBase
-    
+
+    PERMISSIONS = ('read', 'write', 'execute', 'remove', 'add')
+    TYPES = Choices(('file', _('file')), ('folder', _('folder')))
+
     name = models.CharField(_('name'), max_length=256)
-    owner = models.ForeignKey('auth.user',
-        related_name='%(class)s_list',
-        verbose_name=_('owner')
+    itype = models.CharField(_('type'), max_length=10, null=True,
+                             choices=TYPES)
+    parent = models.ForeignKey('self', null=True, blank=True,
+                            related_name='children',
+                            verbose_name=_('parent node'),
+                            limit_choices_to={
+                                'inode_type': TYPES.folder
+                            }
     )
+    owner = models.ForeignKey('auth.user', related_name='%(class)s_list',
+                              verbose_name=_('owner'))
     created = AutoCreatedField(_('created'))
     modified = AutoLastModifiedField(_('modified'))
     
     class Meta:
-        abstract = True
         verbose_name = _('INode')
         verbose_name_plural = _('INodes')
+        unique_together = ('name', 'parent')
         ordering = ['name']
     
     def __unicode__(self):
         return self.name
-
-    def __get_path__(self):
-        path = ''
-        def join(*args):
-            p, separator = '', '/'
-            for arg in args:
-                if arg:
-                    p += separator + arg
-            return p
-        while self.parent:
-            path = join(self.parent.name, path)
-        return join(path, self.name)
-    path = property(__get_path__)
-    
+   
     def has_perm(self, perm, user):
         perm_function = 'has_%s_permission' % perm
         if hasattr(self, perm_function):
             return getattr(self, perm_function)(user)
+        # superuser can everything
+        if isinstance(user, User):
+            return user.is_superuser
         return False
 
-
-class DirectoryNode(INode):
-    """
-    Directory base class.
-    """    
-    parent = TreeForeignKey('self', null=True, blank=True,
-                               related_name='children_dirs',
-                               verbose_name=_('parent node'))
+    def _set_node(node):
+        self._node = node
+        node.save()
+        self._node_id = node.id
     
-    class Meta:
-        verbose_name = _('Directory')
-        verbose_name_plural = _('Directories')
+    def __init__(self, *args, **kwargs):
+        super(INode, self).__init__(*args, **kwargs)
+        # set type of the inode
+        if hasattr(self, 'TYPE'):
+            self.itype = self.TYPE
 
-    class INodeMeta:
-        base_permissions = True
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super(INode, self).save(*args, **kwargs)
+    
+    @property
+    def hash(self):
+        return self.pk
 
     @property
-    def total_size(self):
-        s = 0
-        # size from all subdirectories
-        for obj in self.children_dirs.all():
-            s += obj.size
-        # size of files in this directory
-        for obj in self.children_files.all():
-            s += obj.size
-        return s
+    def phash(self):
+        if self.parent:
+            return self.parent.pk
+        return None
 
     @property
     def size(self):
         return 0
     
+    @property
+    def path(self):
+        p = self.name
+        while self.parent:
+            p = '/'.join([self.parent.name, p])
+        return '/%s' % p
+
+
+class FolderNode(INode):
+    """
+    Base folder node
+    """
+    TYPE = INode.TYPES.folder
+
+    class Meta:
+        verbose_name = _('Folder')
+        verbose_name_plural = _('Folders')
+
+    class INodeMeta:
+        base_permissions = True
+    
+    @property
+    def total_size(self):
+        s = 0
+        # size from all subdirectories
+        children = self.children.all()
+        for obj in children.filter(inode_type=TYPES.folder):
+            s += obj.size
+        # size of files in this directory
+        for obj in children.filter(inode_type=TYPES.file):
+            s += obj.size
+        return s
+
 
 class FileNode(INode):
     """
     Base file node
     """
-    parent = TreeForeignKey('DirectoryNode', null=True, blank=True,
-                               related_name='children_files',
-                               verbose_name=_('parent node'))
+    TYPE = INode.TYPES.file
+    
     data = models.FileField(_('File'), max_length=256,
                             upload_to=get_path_for_upload)
 
@@ -147,13 +172,16 @@ class FileNode(INode):
     def size(self):
         return self.data.size
 
+    @property
+    def base_path(self):
+        p = self.path
+        # all the string until last '/'
+        return p[:p.rfind('/')]
+
 
 class ImageNode(FileNode):
-    """
-    Image file
-    """
-    width = models.IntegerField(_('width'), blank=True, null=True)
-    height = models.IntegerField(_('height'), blank=True, null=True)
+    width = models.IntegerField(_('width'))
+    height = models.IntegerField(_('height'))
 
     class Meta:
         verbose_name = _('Image')

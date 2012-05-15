@@ -4,7 +4,7 @@ from elfinder import models
 
 INODE_BASE_CLASSES = [
     models.FileNode,
-    models.DirectoryNode,
+    models.FolderNode,
 ]
 
 def elfinder_create_permissions(verbosity, **kwargs):

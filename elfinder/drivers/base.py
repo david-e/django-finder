@@ -1,10 +1,12 @@
 
 
 class BaseDriver(object):
+    commands = []  # list containing all available commands
+    
     def __init__(self, *args, **kwargs):
         pass
 
-    def get_info(self, target):
+    def info(self, target):
         """
         Returns a dict containing information about the target directory
         or file. This data is used in response to 'open' commands to
@@ -15,7 +17,7 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def get_tree(self, target, ancestors=False, siblings=False):
+    def tree(self, target, ancestors=False, siblings=False):
         """
         Gets a list of dicts describing children/ancestors/siblings of the
         target.
