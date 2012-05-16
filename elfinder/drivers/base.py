@@ -127,7 +127,7 @@ class FinderDriver(BaseDriver):
         'rename' : 'rename',
         'rm'     : 'remove',
         'paste'  : 'paste',
-    #    'parents': 'parents',
+        'parents': 'parents',
     #    'upload' : 'upload',
         'size'   : 'size',
     }
@@ -157,10 +157,19 @@ class FinderDriver(BaseDriver):
                     data.append(item_siblings.info(user))
         return data
 
-    def tree(self, target=models.INode.ROOT['HASH'], user=None):
+    def parents(self, target, user=None):
+        curr_dir = self._get_inode(target)
+        tree = self._tree(curr_dir, tree=True, user=user)
+        return {
+            'parents': tree
+        }
+    
+    def tree(self, target, user=None):
         curr_dir = self._get_inode(target)
         tree = self._tree(curr_dir, user=user)
-        return {'tree': tree}
+        return {
+            'tree': tree
+        }
 
     def open(self, target=models.INode.ROOT['HASH'], tree=None,
              user=None):
@@ -174,7 +183,7 @@ class FinderDriver(BaseDriver):
             'cwd': curr_dir.info(user)
         }
         
-    def list(self, target=models.INode.ROOT['HASH'], user=None):
+    def list(self, target, user=None):
         """
         Returns a list of files/directories in the target directory.
         """

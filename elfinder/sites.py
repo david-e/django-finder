@@ -24,7 +24,7 @@ class ElfinderSite(object):
                 ['rm'],
                 ['rename'],
                 ['info', 'quicklook'],
-                ['view'],
+                ['view', 'sort'],
             ]
         },
         'context_menu': {

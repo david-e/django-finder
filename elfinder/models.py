@@ -151,19 +151,20 @@ class INode(models.Model):
         return self._inode_meta.mimetypes[0]
 
     def to_timestamp(self, datetime):
-        return int(time.mktime(datetime.timetuple()) * 1000)
+        return time.mktime(datetime.timetuple())
 
     def info(self, user=None):
         return {
-            'name' : self.name,
-            'hash' : self.hash,
-            'phash': self.phash,
-            'mime' : self.mimetype,
-            'size' : self.size,
-            'read' : self.has_perm('read', user),
-            'write': self.has_perm('write', user),
-            'rm'   : self.has_perm('remove', user),
-            'ts'   : self.to_timestamp(self.modified)
+            'name'  : self.name,
+            'hash'  : self.hash,
+            'phash' : self.phash,
+            'mime'  : self.mimetype,
+            'size'  : self.size,
+            'read'  : self.has_perm('read', user),
+            'write' : self.has_perm('write', user),
+            'rm'    : self.has_perm('remove', user),
+            'ts'    : self.to_timestamp(self.modified),
+            'locked': int(self.pk == self.ROOT['PK']),
         }
 
     def all_folders(self):
