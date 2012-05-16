@@ -1,4 +1,4 @@
-
+from elfinder import models
 
 class BaseDriver(object):
     commands = []  # list containing all available commands
@@ -6,7 +6,7 @@ class BaseDriver(object):
     def __init__(self, *args, **kwargs):
         pass
 
-    def info(self, target):
+    def info(self, target, user=None):
         """
         Returns a dict containing information about the target directory
         or file. This data is used in response to 'open' commands to
@@ -17,7 +17,8 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def tree(self, target, ancestors=False, siblings=False):
+    def open(self, target_hash=None,
+             user=None, ancestors=False, siblings=False):
         """
         Gets a list of dicts describing children/ancestors/siblings of the
         target.
@@ -29,7 +30,7 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def read_file_view(self, request, hash):
+    def read_file_view(self, request, hash, user=None):
         """
         Django view function, used to display files in response to the
         'file' command.
@@ -39,7 +40,7 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def mkdir(self, name, parent):
+    def mkdir(self, name, parent, user=None):
         """
         Creates a directory.
         :param name: The name of the new directory.
@@ -48,7 +49,7 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def mkfile(self, name, parent):
+    def mkfile(self, name, parent, user=None):
         """
         Creates a directory.
         :param name: The name of the new file.
@@ -57,7 +58,7 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def rename(self, name, target):
+    def rename(self, name, target, user=None):
         """
         Renames a file or directory.
         :param name: The new name of the file/directory.
@@ -67,7 +68,7 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def list(self, target):
+    def list(self, target, user=None):
         """
         Lists the contents of a directory.
         :param target: The hash of the target directory.
@@ -76,7 +77,7 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def paste(self, targets, source, dest, cut):
+    def paste(self, targets, source, dest, cut, user=None):
         """
         Moves/copies target files/directories from source to dest.
             If a file with the same name already exists in the dest directory
@@ -91,7 +92,7 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def remove(self, target):
+    def remove(self, target, user=None):
         """
         Deletes the target files/directories.
         The 'rm' command takes a list of targets - this function is called
@@ -102,7 +103,7 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def upload(self, files, parent):
+    def upload(self, files, parent, user=None):
         """
         Uploads one or more files in to the parent directory.
         :param files: A list of uploaded file objects, as described here:
@@ -111,3 +112,55 @@ class BaseDriver(object):
         new files.
         """
         raise NotImplementedError
+
+
+class FinderDriver(BaseDriver):
+    # this dict contain the relation between the command requested from elfinder
+    # and the function of the driver that perform the command
+    commands = {
+        'open': 'open',
+        'tree': 'tree',
+    }
+
+    def __init__(self, folder_model=models.FolderNode,
+                 file_model=models.FileNode):
+        self.file_model = file_model
+        self.folder_model = folder_model
+
+    def tree(self, target=models.INode.ROOT['HASH'], user=None):
+        files, curr_dir_info = self._tree(target, False, user)
+        # tree commands wants a 'tree' key instead of 'files' one.
+        # So change it.
+        return {'tree': files}
+
+    def _tree(self, target=models.INode.ROOT['HASH'], tree=None,
+              user=None):
+        data = []
+        folders = self.folder_model
+        try:
+            curr_dir = folders.objects.get_hash(target)
+            curr_dir_info = curr_dir.info(user)
+            print 'curr:', curr_dir
+        except folders.DoesNotExist, folders.MultipleObjectsReturned:
+            return []  # handle the error
+        print 'children'
+        for inode in curr_dir.children.select_subclasses():
+            print inode
+            data.append(inode.info(user))
+        # if tree == True data must contain also all ancestors and siblings of
+        # the target
+        if tree:
+            for item in curr_dir.get_ancestors(include_self=True):
+                data.append(item.info(user=user))
+                for item_siblings in item.get_siblings():
+                    data.append(item_siblings.info(user))
+        return data, curr_dir_info
+
+    def open(self, target=models.INode.ROOT['HASH'], tree=None,
+             user=None):
+        """
+        Handles the open command
+        """
+        files, curr_dir_info = self._tree(target, tree, user)
+        return {'files': files, 'cwd': curr_dir_info}
+        

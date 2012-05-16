@@ -1,17 +1,21 @@
+import mimetypes
+
 from django.contrib.auth.models import Permission, User
 from django.db import models
 from django.utils.translation import ugettext as _
 
 from model_utils.fields import AutoCreatedField, AutoLastModifiedField, Choices
+from model_utils.managers import InheritanceManager
 
 from elfinder.utils import get_path_for_upload
 
 
 class INodeOptions(object):
-    DEFAULT_NAMES = ('base_permissions',)
+    DEFAULT_NAMES = ('base_permissions', 'mimetypes')
 
     def __init__(self, meta):
         self.base_permissions = False
+        self.mimetypes = [None]
         self.meta = meta
 
     def contribute_to_class(self, cls, name):
@@ -47,6 +51,16 @@ class INodeBase(models.base.ModelBase):
         return new_class
 
 
+class INodeManager(InheritanceManager):
+
+    def get_hash(self, target_hash):
+        """
+        In this implementation hash is the inode primary key,
+        but this method hides the magic.
+        """
+        return self.get_query_set().get(pk=target_hash)
+
+
 class INode(models.Model):
     """
     Basic inode structure. This is used as base for directory and files classes
@@ -55,6 +69,7 @@ class INode(models.Model):
 
     PERMISSIONS = ('read', 'write', 'execute', 'remove', 'add')
     TYPES = Choices(('file', _('file')), ('folder', _('folder')))
+    ROOT = {'PK': 1, 'HASH': 1}
 
     name = models.CharField(_('name'), max_length=256)
     itype = models.CharField(_('type'), max_length=10, null=True,
@@ -63,13 +78,16 @@ class INode(models.Model):
                             related_name='children',
                             verbose_name=_('parent node'),
                             limit_choices_to={
-                                'inode_type': TYPES.folder
-                            }
+                                'itype': TYPES.folder
+                            },
+                            default=ROOT['PK']
     )
     owner = models.ForeignKey('auth.user', related_name='%(class)s_list',
                               verbose_name=_('owner'))
     created = AutoCreatedField(_('created'))
     modified = AutoLastModifiedField(_('modified'))
+
+    objects = INodeManager()
     
     class Meta:
         verbose_name = _('INode')
@@ -88,11 +106,6 @@ class INode(models.Model):
         if isinstance(user, User):
             return user.is_superuser
         return False
-
-    def _set_node(node):
-        self._node = node
-        node.save()
-        self._node_id = node.id
     
     def __init__(self, *args, **kwargs):
         super(INode, self).__init__(*args, **kwargs)
@@ -112,7 +125,7 @@ class INode(models.Model):
     def phash(self):
         if self.parent:
             return self.parent.pk
-        return None
+        return ''
 
     @property
     def size(self):
@@ -125,6 +138,41 @@ class INode(models.Model):
             p = '/'.join([self.parent.name, p])
         return '/%s' % p
 
+    @property
+    def mimetype(self):
+        return self._inode_meta.mimetypes[0]
+
+    def info(self, user=None):
+        return {
+            'name' : self.name,
+            'hash' : self.hash,
+            'phash': self.phash,
+            'mime' : self.mimetype,
+            'size' : self.size,
+            'read' : self.has_perm('read', user),
+            'write': self.has_perm('write', user),
+            'rm'   : self.has_perm('remove', user)
+        }
+
+    def list_folders(self):
+        return INode.objects.filter(itype=INode.folder)
+
+    def list_files(self):
+        return INode.objects.filter(itype=INode.file)
+
+    def get_ancestors(self, include_self=False):
+        ancestors = []
+        curr_node = self if include_self else self.parent
+        while curr_node:
+            ancestors.insert(0, curr_node) # insert at the beggining
+            curr_node = curr_node.parent
+        return ancestors
+
+    def get_siblings(self,):
+        siblings = []
+        if self.parent:
+            siblings = INode.objects.filter(parent=self.parent)
+        return siblings
 
 class FolderNode(INode):
     """
@@ -132,12 +180,15 @@ class FolderNode(INode):
     """
     TYPE = INode.TYPES.folder
 
+    objects = INodeManager()
+
     class Meta:
         verbose_name = _('Folder')
         verbose_name_plural = _('Folders')
 
     class INodeMeta:
         base_permissions = True
+        mimetypes = ['directory']
     
     @property
     def total_size(self):
@@ -150,6 +201,12 @@ class FolderNode(INode):
         for obj in children.filter(inode_type=TYPES.file):
             s += obj.size
         return s
+
+    def info(self, user):
+        info = super(FolderNode, self).info(user)
+        info['dirs'] = int(
+            self.children.filter(itype=INode.TYPES.folder).count() > 0)
+        return info
 
 
 class FileNode(INode):
@@ -167,6 +224,7 @@ class FileNode(INode):
 
     class INodeMeta:
         base_permissions = True
+        mimetypes = ['text/plain']
 
     @property
     def size(self):
@@ -178,6 +236,10 @@ class FileNode(INode):
         # all the string until last '/'
         return p[:p.rfind('/')]
 
+    @property
+    def mimetype(self):
+        mimetypes.guess_type(self.data.url)[0] # first element of the tuple
+
 
 class ImageNode(FileNode):
     width = models.IntegerField(_('width'))
@@ -186,3 +248,6 @@ class ImageNode(FileNode):
     class Meta:
         verbose_name = _('Image')
         verbose_name_plural = _('Images')
+
+    class INodeMeta:
+        mimetypes = ['image/png', 'image/jpeg', 'image/gif']
