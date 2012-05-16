@@ -1,3 +1,5 @@
+from django.core.exceptions import PermissionDenied
+
 from elfinder import models
 
 class BaseDriver(object):
@@ -40,20 +42,20 @@ class BaseDriver(object):
         """
         raise NotImplementedError
 
-    def mkdir(self, name, parent, user=None):
+    def mkdir(self, name, target, user=None):
         """
         Creates a directory.
         :param name: The name of the new directory.
-        :param parent: The hash of the parent directory.
+        :param target: The hash of the parent directory.
         :returns: dict -- a dict describing the new directory.
         """
         raise NotImplementedError
 
-    def mkfile(self, name, parent, user=None):
+    def mkfile(self, name, target, user=None):
         """
-        Creates a directory.
+        Creates a file.
         :param name: The name of the new file.
-        :param parent: The hash of the parent directory.
+        :param target: The hash of the parent directory.
         :returns: dict -- a dict describing the new file.
         """
         raise NotImplementedError
@@ -118,34 +120,33 @@ class FinderDriver(BaseDriver):
     # this dict contain the relation between the command requested from elfinder
     # and the function of the driver that perform the command
     commands = {
-        'open': 'open',
-        'tree': 'tree',
+        'open'   : 'open',
+        'tree'   : 'tree',
+        'list'   : 'list',
+        'mkdir'  : 'mkdir',
+        'rename' : 'rename',
+        'rm'     : 'remove',
+        'paste'  : 'paste',
+    #    'parents': 'parents',
+    #    'upload' : 'upload',
+        'size'   : 'size',
     }
 
-    def __init__(self, folder_model=models.FolderNode,
-                 file_model=models.FileNode):
-        self.file_model = file_model
+    def __init__(self, inode_model = models.INode,
+                 folder_model=models.FolderNode, file_model=models.FileNode):
+        self.inode_model = inode_model
         self.folder_model = folder_model
+        self.file_model = file_model
 
-    def tree(self, target=models.INode.ROOT['HASH'], user=None):
-        files, curr_dir_info = self._tree(target, False, user)
-        # tree commands wants a 'tree' key instead of 'files' one.
-        # So change it.
-        return {'tree': files}
+    def _get_inode(self, target_hash):
+        """
+        Return the inode cast to subclasses
+        """
+        return self.inode_model.objects.get_hash(target_hash)
 
-    def _tree(self, target=models.INode.ROOT['HASH'], tree=None,
-              user=None):
+    def _tree(self, curr_dir, tree=None, user=None):
         data = []
-        folders = self.folder_model
-        try:
-            curr_dir = folders.objects.get_hash(target)
-            curr_dir_info = curr_dir.info(user)
-            print 'curr:', curr_dir
-        except folders.DoesNotExist, folders.MultipleObjectsReturned:
-            return []  # handle the error
-        print 'children'
         for inode in curr_dir.children.select_subclasses():
-            print inode
             data.append(inode.info(user))
         # if tree == True data must contain also all ancestors and siblings of
         # the target
@@ -154,13 +155,121 @@ class FinderDriver(BaseDriver):
                 data.append(item.info(user=user))
                 for item_siblings in item.get_siblings():
                     data.append(item_siblings.info(user))
-        return data, curr_dir_info
+        return data
+
+    def tree(self, target=models.INode.ROOT['HASH'], user=None):
+        curr_dir = self._get_inode(target)
+        tree = self._tree(curr_dir, user=user)
+        return {'tree': tree}
 
     def open(self, target=models.INode.ROOT['HASH'], tree=None,
              user=None):
         """
         Handles the open command
         """
-        files, curr_dir_info = self._tree(target, tree, user)
-        return {'files': files, 'cwd': curr_dir_info}
+        curr_dir = self._get_inode(target)
+        files = self._tree(curr_dir, tree, user)
+        return {
+            'files': files,
+            'cwd': curr_dir.info(user)
+        }
         
+    def list(self, target=models.INode.ROOT['HASH'], user=None):
+        """
+        Returns a list of files/directories in the target directory.
+        """
+        curr_dir = self._get_inode(target)
+        tree = self._tree(curr_dir, user=user)
+        inode_list = [inode['name'] for inode in tree]
+        return {
+            'list': inode_list
+        }
+
+    def mkdir(self, name, target, user=None):
+        par_dir = self._get_inode(target)
+        if not par_dir.has_perm('add', user):
+            raise PermissionDenied('You do not have permission \
+                                   to create folder in %s' % par_dir.name)
+        new_dir, created = self.folder_model.objects.get_or_create(
+            name = name,
+            parent = par_dir,
+            owner = user,
+        )
+        return {
+            'added': [new_dir.info(user)]
+        }
+
+    def rename(self,  name, target, user=None):
+        inode = self._get_inode(target)
+        if not inode.has_perm('write', user):
+            raise PermissionDenied('You do not have permission \
+                                   to rename %s' % inode.name)
+        inode.name = name
+        inode.save()
+        return {
+            'added': [inode.info(user)],
+                'removed': [target]
+        }
+
+    def remove(self, targets, user=None):
+        removed = []
+        for target in targets:
+            inode = self._get_inode(target)
+            if not inode.has_perm('remove', user):
+                raise PermissionDenied('You do not have permission \
+                                   to remove %s' % inode.name)
+            inode.delete()
+            removed.append(target)
+        return {
+            'removed': removed
+        }
+
+    def _copy_inode(self, target, dst_dir):
+        import copy
+        new_inode = copy.copy(target)
+            # so when save is called, django create a new pk
+        new_inode.pk = new_inode.id = None
+        new_inode.parent = dst_dir # set the new parent folder
+        new_inode.save()
+        return new_inode
+
+    def paste(self, targets, src, dst, cut, user=None):
+        removed, added = [], []
+        src_dir = self._get_inode(src)
+        dst_dir = self._get_inode(dst)
+        for target in targets:
+            inode = self._get_inode(target)
+            # check read permission on target inode
+            if not inode.has_perm('read', user):
+                raise PermissionDenied('You do not have permission \
+                                        to read %s' % inode.name)
+            # check user permission on destination folder
+            if not dst_dir.has_perm('add', user):
+                raise PermissionDenied('You do not have permission \
+                                        to read %s' % inode.name)
+            # check if inode.name is not already present in destination folder
+            if dst_dir.children.filter(name=inode.name).count():
+                raise Exception('%s is already present in %s' % (inode.name,
+                                                             dst_dir.name))
+            new_inode = self._copy_inode(inode, dst_dir)
+            added.append(new_inode.info(user))
+            if cut == '1':
+                if not inode.has_perm('remove', user):
+                     raise PermissionDenied('You do not have permission \
+                                            to remove %s' % inode.name)
+                inode.delete()
+                removed.append(target)
+        return {
+            'added': added,
+            'removed': removed
+        }
+
+    def size(self, targets, user=None):
+        size = 0
+        for target in targets:
+            inode = self._get_inode(target)
+            size += inode.total_size
+        return {
+            'size': size
+        }
+    

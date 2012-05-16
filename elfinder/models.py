@@ -1,4 +1,5 @@
 import mimetypes
+import time
 
 from django.contrib.auth.models import Permission, User
 from django.db import models
@@ -58,7 +59,7 @@ class INodeManager(InheritanceManager):
         In this implementation hash is the inode primary key,
         but this method hides the magic.
         """
-        return self.get_query_set().get(pk=target_hash)
+        return self.get_subclass(pk=target_hash)
 
 
 class INode(models.Model):
@@ -67,6 +68,13 @@ class INode(models.Model):
     """
     __metaclass__ = INodeBase
 
+    """
+    add     - is the permission to add folders or files to a target folder
+    remove  - is the permission to remove a file or a folder
+    read    - is the permission to read the content of a file or a folder
+    write   - is the permission to rename files or folders
+    execute - is the permission to pass through a folder (unused at the moment)
+    """
     PERMISSIONS = ('read', 'write', 'execute', 'remove', 'add')
     TYPES = Choices(('file', _('file')), ('folder', _('folder')))
     ROOT = {'PK': 1, 'HASH': 1}
@@ -142,6 +150,9 @@ class INode(models.Model):
     def mimetype(self):
         return self._inode_meta.mimetypes[0]
 
+    def to_timestamp(self, datetime):
+        return int(time.mktime(datetime.timetuple()) * 1000)
+
     def info(self, user=None):
         return {
             'name' : self.name,
@@ -151,13 +162,14 @@ class INode(models.Model):
             'size' : self.size,
             'read' : self.has_perm('read', user),
             'write': self.has_perm('write', user),
-            'rm'   : self.has_perm('remove', user)
+            'rm'   : self.has_perm('remove', user),
+            'ts'   : self.to_timestamp(self.modified)
         }
 
-    def list_folders(self):
+    def all_folders(self):
         return INode.objects.filter(itype=INode.folder)
 
-    def list_files(self):
+    def all_files(self):
         return INode.objects.filter(itype=INode.file)
 
     def get_ancestors(self, include_self=False):
@@ -168,11 +180,12 @@ class INode(models.Model):
             curr_node = curr_node.parent
         return ancestors
 
-    def get_siblings(self,):
+    def get_siblings(self):
         siblings = []
         if self.parent:
             siblings = INode.objects.filter(parent=self.parent)
         return siblings
+
 
 class FolderNode(INode):
     """
@@ -195,10 +208,10 @@ class FolderNode(INode):
         s = 0
         # size from all subdirectories
         children = self.children.all()
-        for obj in children.filter(inode_type=TYPES.folder):
+        for obj in children.filter(itype=INode.TYPES.folder):
             s += obj.size
         # size of files in this directory
-        for obj in children.filter(inode_type=TYPES.file):
+        for obj in children.filter(itype=INode.TYPES.file):
             s += obj.size
         return s
 
@@ -239,6 +252,24 @@ class FileNode(INode):
     @property
     def mimetype(self):
         mimetypes.guess_type(self.data.url)[0] # first element of the tuple
+
+    @property
+    def total_size(self):
+        s = 0
+        # size from all subdirectories
+        children = self.children.all()
+        for obj in children.filter(itype=INode.TYPES.folder):
+            s += obj.size
+        # size of files in this directory
+        for obj in children.filter(itype=INode.TYPES.file):
+            s += obj.size
+        return s
+
+    def info(self, user):
+        info = super(FolderNode, self).info(user)
+        info['dirs'] = int(
+            self.children.filter(itype=INode.TYPES.folder).count() > 0)
+        return info
 
 
 class ImageNode(FileNode):

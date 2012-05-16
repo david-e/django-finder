@@ -12,9 +12,6 @@ from django.views.decorators.csrf import csrf_protect
 
 from elfinder.drivers.base import FinderDriver
 
-# Get an instance of a logger
-logger = logging.getLogger(__name__)
-
 class ElfinderSite(object):
     index_template = 'elfinder/base.html'
     title = 'File manager'
@@ -22,16 +19,17 @@ class ElfinderSite(object):
         'ui_options': {
             'toolbar': [
                 ['back', 'forward'],
-                ['download', 'mkdir', 'mkfile', 'upload'],
+                ['download', 'mkdir', 'upload'],
                 ['copy', 'cut', 'paste'],
                 ['rm'],
                 ['rename'],
+                ['info', 'quicklook'],
                 ['view'],
             ]
         },
         'context_menu': {
             'navbar': ['open', '|', 'copy', 'cut', 'paste', '|', 'rm'],
-            'cwd': ['reload', 'back', '|', 'mkdir', 'mkfile', 'paste' '|',
+            'cwd': ['reload', 'back', '|', 'mkdir', 'paste' '|',
                     'upload'],
             'files': ['edit', 'open', '|', 'copy', 'cut', 'paste', '|',
                   'rm', 'rename']
@@ -121,7 +119,7 @@ class ElfinderSite(object):
         return True
 
     def error_response(self, message):
-        return self._create_connector_response({'error': message})
+        return self._create_response({'error': message})
 
     def _create_response(self, content,
         status_code=200,  mimetype='application/json',):
@@ -153,7 +151,7 @@ class ElfinderSite(object):
             if arg is 'self':
                 continue
             # arg present in data
-            if arg in data:
+            if arg in data and data[arg]:
                 params[arg] = data[arg]
                 continue
             # means mandatory argument and no default value present
@@ -174,20 +172,21 @@ class ElfinderSite(object):
         for field in self.allowed_http_params:
             if field in data_src:
                 if field == "targets[]":
-                    data[field] = data_src.getlist(field)
+                    data['targets'] = data_src.getlist(field)
                 else:
                     data[field] = data_src[field]
-        print data
+        logging.error('Request: %s' % data)
         if not 'cmd' in data:
             return error_response('no cmd paramater found in the request')
         # check if 'cmd' is available in the driver and run it
         cmd = data.pop('cmd')
         if not cmd in self.driver.commands:
             return self.error_response(
-                'command %s not available with this driver' % cmd)
+                'command %s not available!' % cmd)
         try:
             content = self.run_command(cmd, **data)
         except Exception as e:
-            return self.error_response(e)
-        print content
+            print e
+            return self.error_response(e.message)
+        logging.error('Response: %s' % content)
         return self._create_response(content)
