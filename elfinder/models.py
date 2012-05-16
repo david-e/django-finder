@@ -16,7 +16,7 @@ class INodeOptions(object):
 
     def __init__(self, meta):
         self.base_permissions = False
-        self.mimetypes = [None]
+        self.mimetypes = []
         self.meta = meta
 
     def contribute_to_class(self, cls, name):
@@ -40,8 +40,9 @@ class INodeOptions(object):
                         return (user.is_superuser or
                                 user.has_perm(permission, cls))
                     return False
-                setattr(cls, 'has_%s_permission' % perm, func) 
-
+                setattr(cls, 'has_%s_permission' % perm, func)
+        for mimetype in self.mimetypes:
+            INode.MIMETYPES[mimetype] = cls
 
 class INodeBase(models.base.ModelBase):
 
@@ -79,6 +80,10 @@ class INode(models.Model):
     TYPES = Choices(('file', _('file')), ('folder', _('folder')))
     ROOT = {'PK': 1, 'HASH': 1}
 
+    # dictionary filled at runtime with 'mimetype': ModelClass that handle
+    # the upload
+    MIMETYPES = {}
+
     name = models.CharField(_('name'), max_length=256)
     itype = models.CharField(_('type'), max_length=10, null=True,
                              choices=TYPES)
@@ -90,6 +95,7 @@ class INode(models.Model):
                             },
                             default=ROOT['PK']
     )
+    mime = models.CharField(max_length=30, blank=True, null=True)
     owner = models.ForeignKey('auth.user', related_name='%(class)s_list',
                               verbose_name=_('owner'))
     created = AutoCreatedField(_('created'))
@@ -146,10 +152,6 @@ class INode(models.Model):
             p = '/'.join([self.parent.name, p])
         return '/%s' % p
 
-    @property
-    def mimetype(self):
-        return self._inode_meta.mimetypes[0]
-
     def to_timestamp(self, datetime):
         return time.mktime(datetime.timetuple())
 
@@ -158,7 +160,7 @@ class INode(models.Model):
             'name'  : self.name,
             'hash'  : self.hash,
             'phash' : self.phash,
-            'mime'  : self.mimetype,
+            'mime'  : self.mime,
             'size'  : self.size,
             'read'  : self.has_perm('read', user),
             'write' : self.has_perm('write', user),
@@ -203,7 +205,11 @@ class FolderNode(INode):
     class INodeMeta:
         base_permissions = True
         mimetypes = ['directory']
-    
+
+    def __init__(self, *args, **kwargs):
+        super(FolderNode, self).__init__(*args, **kwargs)
+        self.mime = 'directory'
+
     @property
     def total_size(self):
         s = 0
@@ -238,7 +244,13 @@ class FileNode(INode):
 
     class INodeMeta:
         base_permissions = True
-        mimetypes = ['text/plain']
+        mimetypes = ['application/octet-stream']
+
+
+    def __init__(self, *args, **kwargs):
+        super(FileNode, self).__init__(*args, **kwargs)
+        if hasattr(self.data, 'name'):
+            self.mime = mimetypes.guess_type(self.data.name)[0]
 
     @property
     def size(self):
@@ -267,19 +279,22 @@ class FileNode(INode):
         return s
 
     def info(self, user):
-        info = super(FolderNode, self).info(user)
-        info['dirs'] = int(
-            self.children.filter(itype=INode.TYPES.folder).count() > 0)
+        info = super(FileNode, self).info(user)
+        info['mime'] = self.mime
         return info
 
 
 class ImageNode(FileNode):
-    width = models.IntegerField(_('width'))
-    height = models.IntegerField(_('height'))
+    width = models.IntegerField(_('width'), blank=True, null=True)
+    height = models.IntegerField(_('height'), blank=True, null=True)
+
+    def __init__(self, *args, **kwargs):
+        super(ImageNode, self).__init__(*args, **kwargs)
+        # analyze image to find characteristics
 
     class Meta:
         verbose_name = _('Image')
         verbose_name_plural = _('Images')
 
     class INodeMeta:
-        mimetypes = ['image/png', 'image/jpeg', 'image/gif']
+        mimetypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif']

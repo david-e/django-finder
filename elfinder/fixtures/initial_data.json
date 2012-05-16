@@ -1,13 +1,19 @@
 [
     {
         "fields": {
-            "created": "2012-05-15T11:09:36.422", 
+            "created": "2012-05-16T11:53:00.131", 
             "itype": "folder", 
-            "modified": "2012-05-15T11:09:36.430", 
+            "mime": "", 
+            "modified": "2012-05-16T11:53:00.134", 
             "name": "Home", 
-            "owner": 1,
-	    "parent": null
+            "owner": 1, 
+            "parent": null
         }, 
+        "model": "elfinder.inode", 
+        "pk": 1
+    }, 
+    {
+        "fields": {}, 
         "model": "elfinder.foldernode", 
         "pk": 1
     }

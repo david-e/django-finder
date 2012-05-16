@@ -145,7 +145,7 @@ class ElfinderSite(object):
         driver_func = getattr(self.driver, self.driver.commands[cmd])
         args, _, _, defaults = inspect.getargspec(driver_func)
         # driver_func accept only args and defaults
-        index = len(args) - len(defaults) # index of args with defaults
+        index = len(args) - len(defaults or []) # index of args with defaults
         params = {}
         for arg in args:
             if arg is 'self':
@@ -167,7 +167,10 @@ class ElfinderSite(object):
     def connector(self, request, extra_context=None):
         data_src = request.POST or request.GET
         # fill the data dict, needed to execute the command
-        data = {'user': request.user}
+        data = {
+            'user': request.user,
+            'files': request.FILES,
+        }
          # Copy allowed parameters from the given request's GET to self.data
         for field in self.allowed_http_params:
             if field in data_src:

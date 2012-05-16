@@ -1,6 +1,9 @@
+import mimetypes
+
 from django.core.exceptions import PermissionDenied
 
 from elfinder import models
+
 
 class BaseDriver(object):
     commands = []  # list containing all available commands
@@ -128,7 +131,7 @@ class FinderDriver(BaseDriver):
         'rm'     : 'remove',
         'paste'  : 'paste',
         'parents': 'parents',
-    #    'upload' : 'upload',
+        'upload' : 'upload',
         'size'   : 'size',
     }
 
@@ -246,14 +249,14 @@ class FinderDriver(BaseDriver):
         removed, added = [], []
         src_dir = self._get_inode(src)
         dst_dir = self._get_inode(dst)
+        # check user permission on destination folder
+        if not dst_dir.has_perm('add', user):
+            raise PermissionDenied('You do not have permission \
+                                    to add anything in %s' % dst_dir.name)
         for target in targets:
             inode = self._get_inode(target)
             # check read permission on target inode
             if not inode.has_perm('read', user):
-                raise PermissionDenied('You do not have permission \
-                                        to read %s' % inode.name)
-            # check user permission on destination folder
-            if not dst_dir.has_perm('add', user):
                 raise PermissionDenied('You do not have permission \
                                         to read %s' % inode.name)
             # check if inode.name is not already present in destination folder
@@ -280,5 +283,29 @@ class FinderDriver(BaseDriver):
             size += inode.total_size
         return {
             'size': size
+        }
+
+    def upload(self, target, files, user=None):
+        parent = self._get_inode(target)
+        added = []
+        if not parent.has_perm('add', user):
+            raise PermissionDenied('You do not have permission \
+                                    to add anything in %s' % parent.name)
+        for key, value in files.items():
+            # guess the type from the filename and get the class that handles it
+            mimetype = mimetypes.guess_type(value.name)
+            FileKlass = self.inode_model.MIMETYPES.get(mimetype,
+                                                       self.file_model)
+            print FileKlass
+            obj = FileKlass(
+                name=value.name,
+                parent=parent,
+                owner=user,
+                data=value
+            )
+            obj.save()
+            added.append(obj.info(user))
+        return {
+            'added': added
         }
     
