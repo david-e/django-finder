@@ -293,12 +293,17 @@ class FinderDriver(BaseDriver):
                                     to add anything in %s' % parent.name)
         for key, value in files.items():
             # guess the type from the filename and get the class that handles it
-            mimetype = mimetypes.guess_type(value.name)
+            filename = value.name
+            if self.inode_model.objects.filter(name=filename,
+                    parent=parent).count() > 0:
+                raise Exception('File %s already exists here!' % filename)
+            # guess_type return a tuple (mimetype, extensions)
+            mimetype = mimetypes.guess_type(filename)[0]
             FileKlass = self.inode_model.MIMETYPES.get(mimetype,
                                                        self.file_model)
             print FileKlass
             obj = FileKlass(
-                name=value.name,
+                name=filename,
                 parent=parent,
                 owner=user,
                 data=value

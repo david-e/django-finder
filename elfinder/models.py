@@ -1,5 +1,6 @@
 import mimetypes
 import time
+import Image
 
 from django.contrib.auth.models import Permission, User
 from django.db import models
@@ -9,6 +10,8 @@ from model_utils.fields import AutoCreatedField, AutoLastModifiedField, Choices
 from model_utils.managers import InheritanceManager
 
 from elfinder.utils import get_path_for_upload
+
+import logging
 
 
 class INodeOptions(object):
@@ -214,12 +217,8 @@ class FolderNode(INode):
     def total_size(self):
         s = 0
         # size from all subdirectories
-        children = self.children.all()
-        for obj in children.filter(itype=INode.TYPES.folder):
-            s += obj.size
-        # size of files in this directory
-        for obj in children.filter(itype=INode.TYPES.file):
-            s += obj.size
+        for item in self.children.select_subclasses():
+            s += item.total_size
         return s
 
     def info(self, user):
@@ -257,6 +256,10 @@ class FileNode(INode):
         return self.data.size
 
     @property
+    def total_size(self):
+        return self.size
+
+    @property
     def base_path(self):
         p = self.path
         # all the string until last '/'
@@ -265,18 +268,6 @@ class FileNode(INode):
     @property
     def mimetype(self):
         mimetypes.guess_type(self.data.url)[0] # first element of the tuple
-
-    @property
-    def total_size(self):
-        s = 0
-        # size from all subdirectories
-        children = self.children.all()
-        for obj in children.filter(itype=INode.TYPES.folder):
-            s += obj.size
-        # size of files in this directory
-        for obj in children.filter(itype=INode.TYPES.file):
-            s += obj.size
-        return s
 
     def info(self, user):
         info = super(FileNode, self).info(user)
@@ -288,9 +279,15 @@ class ImageNode(FileNode):
     width = models.IntegerField(_('width'), blank=True, null=True)
     height = models.IntegerField(_('height'), blank=True, null=True)
 
-    def __init__(self, *args, **kwargs):
-        super(ImageNode, self).__init__(*args, **kwargs)
-        # analyze image to find characteristics
+    def save(self, *args, **kwargs):
+        # analyze image to find characteristics when created
+        if not self.pk:
+            try:
+                im = Image.open(self.data)
+                self.width, self.height = im.size
+            except:
+                logging.error('%s is not a valid image' % self.data.name)
+        super(ImageNode, self).save(*args, **kwargs)
 
     class Meta:
         verbose_name = _('Image')
@@ -298,3 +295,10 @@ class ImageNode(FileNode):
 
     class INodeMeta:
         mimetypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif']
+
+    def info(self, user=None):
+        inf = super(ImageNode, self).info(user=user)
+        if self.width and self.height:
+            inf['dim'] = '%sx%s' % (self.width, self.height)
+        return inf
+        
