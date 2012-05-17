@@ -1,14 +1,12 @@
 import mimetypes
 import time
 import Image
-
 from django.contrib.auth.models import Permission, User
+from django.conf import settings
 from django.db import models
 from django.utils.translation import ugettext as _
-
 from model_utils.fields import AutoCreatedField, AutoLastModifiedField, Choices
 from model_utils.managers import InheritanceManager
-
 from elfinder.utils import get_path_for_upload
 
 import logging
@@ -276,6 +274,9 @@ class FileNode(INode):
 
 
 class ImageNode(FileNode):
+    # thumb contain the filename of the thumbnails
+    thumb = models.CharField(_('thumbnail'), max_length=256,
+                             blank=True, null=True)
     width = models.IntegerField(_('width'), blank=True, null=True)
     height = models.IntegerField(_('height'), blank=True, null=True)
 
@@ -283,9 +284,16 @@ class ImageNode(FileNode):
         # analyze image to find characteristics when created
         if not self.pk:
             try:
-                im = Image.open(self.data)
-                self.width, self.height = im.size
-            except:
+                image = Image.open(self.data)
+                self.width, self.height = image.size
+                image.thumbnail((128, 128))
+                thumbname = get_path_for_upload(
+                    self, '128x128_%s'% self.data, rel_path='thumbs')
+                image.save(thumbname, 'JPEG')
+                # prepend a '/' for an absolute url
+                self.thumb = '/' + thumbname.replace(
+                    settings.MEDIA_ROOT, settings.MEDIA_URL)
+            except Exception as e:
                 logging.error('%s is not a valid image' % self.data.name)
         super(ImageNode, self).save(*args, **kwargs)
 
@@ -300,5 +308,6 @@ class ImageNode(FileNode):
         inf = super(ImageNode, self).info(user=user)
         if self.width and self.height:
             inf['dim'] = '%sx%s' % (self.width, self.height)
+        inf['tmb'] = self.thumb
         return inf
         

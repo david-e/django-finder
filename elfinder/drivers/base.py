@@ -301,7 +301,6 @@ class FinderDriver(BaseDriver):
             mimetype = mimetypes.guess_type(filename)[0]
             FileKlass = self.inode_model.MIMETYPES.get(mimetype,
                                                        self.file_model)
-            print FileKlass
             obj = FileKlass(
                 name=filename,
                 parent=parent,
