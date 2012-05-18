@@ -7,7 +7,7 @@ from django.db import models
 from django.utils.translation import ugettext as _
 from model_utils.fields import AutoCreatedField, AutoLastModifiedField, Choices
 from model_utils.managers import InheritanceManager
-from elfinder.utils import get_path_for_upload
+from elfinder import utils as elutils
 
 import logging
 
@@ -233,7 +233,7 @@ class FileNode(INode):
     TYPE = INode.TYPES.file
     
     data = models.FileField(_('File'), max_length=256,
-                            upload_to=get_path_for_upload)
+                            upload_to=elutils.get_path_for_upload)
 
     class Meta:
         verbose_name = _('File')
@@ -287,13 +287,13 @@ class ImageNode(FileNode):
                 image = Image.open(self.data)
                 self.width, self.height = image.size
                 image.thumbnail((128, 128))
-                thumbname = get_path_for_upload(
+                thumbname = elutils.get_path_for_upload(
                     self, '128x128_%s'% self.data, rel_path='thumbs')
                 image.save(thumbname, 'JPEG')
-                # prepend a '/' for an absolute url
-                self.thumb = '/' + thumbname.replace(
-                    settings.MEDIA_ROOT, settings.MEDIA_URL)
+                # get a valid url starting from a file system path
+                self.thumb = elutils.get_url(thumbname)
             except Exception as e:
+                
                 logging.error('%s is not a valid image' % self.data.name)
         super(ImageNode, self).save(*args, **kwargs)
 

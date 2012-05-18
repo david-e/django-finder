@@ -3,9 +3,6 @@ import os
 from django.conf import settings
 
 
-MEDIA_ROOT = getattr(settings, 'MEDIA_ROOT', 'uploads')
-
-
 def get_path_for_upload(instance, filename, rel_path=None):
     """
     This method build the filename base on a path with structure yyyy/mm/dd
@@ -15,7 +12,7 @@ def get_path_for_upload(instance, filename, rel_path=None):
         from datetime import datetime
         now = datetime.now()
         rel_path = '%4d/%02d/%02d' % (now.year, now.month, now.day)
-    path = os.path.join(MEDIA_ROOT, rel_path)
+    path = os.path.join(settings.MEDIA_ROOT, rel_path)
     # create directory if doesn't exist'
     if not os.path.exists(path):
         os.makedirs(path)
@@ -26,7 +23,7 @@ def get_path_for_upload(instance, filename, rel_path=None):
         i += 1
         filename = '%s_%02d%s' % (name, i, extension)
     return filename
-    
-    
-    
-    
+
+
+def get_url(filename):
+    return '/' + filename.replace(settings.MEDIA_ROOT, settings.MEDIA_URL)

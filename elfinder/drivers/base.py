@@ -1,9 +1,9 @@
 import mimetypes
-
 from django.core.exceptions import PermissionDenied
+from django.http import HttpResponseRedirect
+from elfinder import models, utils as elutils
 
-from elfinder import models
-
+import logging
 
 class BaseDriver(object):
     commands = []  # list containing all available commands
@@ -133,6 +133,8 @@ class FinderDriver(BaseDriver):
         'parents': 'parents',
         'upload' : 'upload',
         'size'   : 'size',
+        'file'   : 'file',
+        'search' : 'search',
     }
 
     def __init__(self, inode_model = models.INode,
@@ -147,51 +149,115 @@ class FinderDriver(BaseDriver):
         """
         return self.inode_model.objects.get_hash(target_hash)
 
-    def _tree(self, curr_dir, tree=None, user=None):
+    def _append_info_if(self, vector, item, root, user, perm='read'):
+        """
+        Append inode informations if perm is available for the user
+        """            
+        if item.has_perm(perm, user):
+            info = item.info(user)
+            if item == root:
+                info['phash'] = ''
+            vector.append(info)
+            return True
+        return False
+
+    def _extend_info_if(self, vector, items, root, user, perm='read'):
+        for item in items:
+            self._append_info_if(vector, item, user, perm)
+        return vector
+
+    def _children_tree(self, root, node, user=None):
+        """
+        Returns the tree starting from root INode object according to
+        user permission
+        """
+        # create the vector of first-level children
+        curr_node = node
+        children, data = [], []
+        i = 0
+        while True:
+            for item in curr_node.children.select_subclasses():
+                if self._append_info_if(data, item, root, user):
+                    children.append(item)
+            if i >= len(data):
+                break
+            curr_node = children[i]
+            i += 1
+        logging.error('children %s' % children)
+        return data
+
+    def _ancestors_tree(self, root, node, siblings=False,
+                        include_self=False, user=None):
+        """
+        Returns the tree from root to node INode object according to user
+        permissions. Append siblings and self if required with paramenters
+        """
+        if not node:
+            return []
         data = []
-        for inode in curr_dir.children.select_subclasses():
-            data.append(inode.info(user))
+        curr_node = node if include_self else node.parent
+        while curr_node:
+            self._append_info_if(data, curr_node, root, user)
+            if curr_node == root:
+                break
+            curr_node = curr_node.parent
+        logging.error('root: %s, ancestors: %s' % (root, data))
+        if siblings and node.parent:
+            self._extend_info_if(data,
+                node.parent.children.select_subclasses(), root, user)
+        logging.error('with siblings: %s' % data)
+        return data
+    
+    def _tree(self, root, target, user=None, tree=None):
+        curr_node = self._get_inode(target)
+        root_node = self._get_inode(root)
+        data = self._children_tree(root_node, curr_node, user)
         # if tree == True data must contain also all ancestors and siblings of
         # the target
         if tree:
-            for item in curr_dir.get_ancestors(include_self=True):
-                data.append(item.info(user=user))
-                for item_siblings in item.get_siblings():
-                    data.append(item_siblings.info(user))
+            data.extend(
+                self._ancestors_tree(root_node, curr_node, siblings=True,
+                                     include_self=True, user=user)
+            )
         return data
 
-    def parents(self, target, user=None):
-        curr_dir = self._get_inode(target)
-        tree = self._tree(curr_dir, tree=True, user=user)
+    def _get_cwd(self, root, target, user=None):
+        node = self._get_inode(target)
+        cwd = node.info(user)
+        if target == root:
+            cwd['phash'] = ''
+        return cwd
+        
+
+    def parents(self, root, target, user=None):
+        tree = self._tree(root, target, tree=True, user=user)
         return {
             'parents': tree
         }
     
-    def tree(self, target, user=None):
-        curr_dir = self._get_inode(target)
-        tree = self._tree(curr_dir, user=user)
+    def tree(self, root, target, user=None):
+        tree = self._tree(root, target, user=user)
         return {
             'tree': tree
         }
 
-    def open(self, target=models.INode.ROOT['HASH'], tree=None,
+    def open(self, root, target=None, tree=None,
              user=None):
         """
         Handles the open command
         """
-        curr_dir = self._get_inode(target)
-        files = self._tree(curr_dir, tree, user)
+        target = target or root
+        files = self._tree(root, target, user=user, tree=tree)
         return {
             'files': files,
-            'cwd': curr_dir.info(user)
+            'cwd': self._get_cwd(root, target, user)
         }
         
-    def list(self, target, user=None):
+    def list(self, target, user=None, root=None):
         """
         Returns a list of files/directories in the target directory.
         """
-        curr_dir = self._get_inode(target)
-        tree = self._tree(curr_dir, user=user)
+        tree = self._tree(root, target, user=user)
         inode_list = [inode['name'] for inode in tree]
         return {
             'list': inode_list
@@ -311,5 +377,24 @@ class FinderDriver(BaseDriver):
             added.append(obj.info(user))
         return {
             'added': added
+        }
+
+    def file(self, target, user=None):
+        inode = self._get_inode(target)
+        if not inode.has_perm('read', user):
+            raise PermissionDenied('You do not have permission \
+                                    to read anything in %s' % inode.name)
+        url = elutils.get_url(inode.data.name)
+        return HttpResponseRedirect(url)
+
+    def search(self, q, user=None, root=None):
+        data = self._tree(root, root, user)
+        logging.error('root: %s data: %s' % (root, data))
+        files = []
+        for item in data:
+            if q in item['name']:
+                files.append(item)
+        return {
+            'files': files,
         }
     

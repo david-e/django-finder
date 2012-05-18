@@ -116,7 +116,7 @@
 <script type="text/javascript" charset="utf-8">
     $().ready(function() {
         var elf = $('#elfinder').elfinder({
-            url : '{% url elfinder:connector %}',
+            url : '{% url elfinder:connector root %}',
             places : 'h',
             rememberLastDir : false,
             placesFirst : false,

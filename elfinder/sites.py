@@ -11,6 +11,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 
 from elfinder.drivers.base import FinderDriver
+from elfinder import models
 
 class ElfinderSite(object):
     index_template = 'elfinder/base.html'
@@ -25,6 +26,7 @@ class ElfinderSite(object):
                 ['rename'],
                 ['info', 'quicklook'],
                 ['view', 'sort'],
+                ['search'],
             ]
         },
         'context_menu': {
@@ -46,7 +48,7 @@ class ElfinderSite(object):
         },
         'allowed_http_params': ['cmd', 'target', 'targets[]', 'current', 'tree',
                 'name', 'content', 'src', 'dst', 'cut', 'init',
-                'type', 'width', 'height', 'upload[]'
+                'type', 'width', 'height', 'upload[]', 'q', 'root',
         ]
     }
 
@@ -102,12 +104,12 @@ class ElfinderSite(object):
 
         # Admin-site-wide views.
         urlpatterns = patterns('',
-            url(r'^$',
-                wrap(self.index),
-                name='index'),
-            url(r'^connector/$',
+            url(r'^connector/(?P<root>.*)$',
                 wrap(self.connector),
                 name='connector'),
+            url(r'^(?P<root>.*)$',
+                wrap(self.index),
+                name='index'),
         )
         return urlpatterns
 
@@ -119,9 +121,9 @@ class ElfinderSite(object):
         return True
 
     def error_response(self, message):
-        return self._create_response({'error': message})
+        return self._ajax_response({'error': message})
 
-    def _create_response(self, content,
+    def _ajax_response(self, content,
         status_code=200,  mimetype='application/json',):
         response = HttpResponse(mimetype = mimetype)
         response.status_code = status_code
@@ -130,11 +132,12 @@ class ElfinderSite(object):
         response.content = content
         return response
     
-    def index(self, request, extra_context=None):
+    def index(self, request, root, extra_context=None):
         context = {
-            'title': self.title,
+            'title'      : self.title,
             'contextmenu': self.context_menu,
-            'uiOptions': self.ui_options,
+            'uiOptions'  : self.ui_options,
+            'root'       : root or models.INode.ROOT['HASH'],
         }
         if extra_context:
             context.update(extra_context)
@@ -164,11 +167,12 @@ class ElfinderSite(object):
             content.update(self.init_params)
         return content
 
-    def connector(self, request, extra_context=None):
+    def connector(self, request, root, extra_context=None):
         data_src = request.POST or request.GET
         # fill the data dict, needed to execute the command
         data = {
             'user': request.user,
+            'root': root,
             'files': request.FILES,
         }
          # Copy allowed parameters from the given request's GET to self.data
@@ -180,7 +184,7 @@ class ElfinderSite(object):
                     data[field] = data_src[field]
         logging.error('Request: %s' % data)
         if not 'cmd' in data:
-            return error_response('no cmd paramater found in the request')
+            return self.error_response('no cmd paramater found in the request')
         # check if 'cmd' is available in the driver and run it
         cmd = data.pop('cmd')
         if not cmd in self.driver.commands:
@@ -189,7 +193,10 @@ class ElfinderSite(object):
         try:
             content = self.run_command(cmd, **data)
         except Exception as e:
-            print e
             return self.error_response(e.message)
+        # special commands (i.e. file) not return a dict to submit by ajax
+        # so return the content from driver as it comes from the run_command
+        if not isinstance(content, dict):
+            return content
         logging.error('Response: %s' % content)
-        return self._create_response(content)
+        return self._ajax_response(content)
