@@ -17,12 +17,12 @@ def get_path_for_upload(instance, filename, rel_path=None):
     if not os.path.exists(path):
         os.makedirs(path)
     i = 0
-    filename = os.path.join(path, filename)
-    while os.path.exists(filename):
-        name, extension = os.path.splitext(filename)
+    while True:
+        fullfilename = os.path.join(path, '%02d%s' % (i, filename))
+        if not os.path.exists(fullfilename):
+            break 
         i += 1
-        filename = '%s_%02d%s' % (name, i, extension)
-    return filename
+    return fullfilename
 
 
 def get_url(filename):

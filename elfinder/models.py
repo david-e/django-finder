@@ -1,4 +1,5 @@
 import mimetypes
+import os
 import time
 import Image
 from django.contrib.auth.models import Permission, User
@@ -190,6 +191,20 @@ class INode(models.Model):
             siblings = INode.objects.filter(parent=self.parent)
         return siblings
 
+    def clone(self, **kwargs):
+        initial = {}
+        for f in self._meta.fields:
+            if (isinstance(f, models.AutoField) or
+                    isinstance(f, models.OneToOneField)):
+                continue
+            key = f.name
+            if isinstance(f, models.FileField):
+                base = getattr(getattr(self, f.name), 'name')
+            else:
+                base = getattr(self, f.name)
+            initial[key] = kwargs.get(key, base)
+        return self.__class__.objects.create(**initial)
+
 
 class FolderNode(INode):
     """
@@ -282,7 +297,7 @@ class ImageNode(FileNode):
 
     def save(self, *args, **kwargs):
         # analyze image to find characteristics when created
-        if not self.pk:
+        if not self.pk and not os.path.exists(self.data.name):
             try:
                 image = Image.open(self.data)
                 self.width, self.height = image.size
@@ -293,7 +308,7 @@ class ImageNode(FileNode):
                 # get a valid url starting from a file system path
                 self.thumb = elutils.get_url(thumbname)
             except Exception as e:
-                
+                logging.error(e.message)
                 logging.error('%s is not a valid image' % self.data.name)
         super(ImageNode, self).save(*args, **kwargs)
 

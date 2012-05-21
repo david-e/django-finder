@@ -302,15 +302,6 @@ class FinderDriver(BaseDriver):
             'removed': removed
         }
 
-    def _copy_inode(self, target, dst_dir):
-        import copy
-        new_inode = copy.copy(target)
-            # so when save is called, django create a new pk
-        new_inode.pk = new_inode.id = None
-        new_inode.parent = dst_dir # set the new parent folder
-        new_inode.save()
-        return new_inode
-
     def paste(self, targets, src, dst, cut, user=None):
         removed, added = [], []
         src_dir = self._get_inode(src)
@@ -329,7 +320,7 @@ class FinderDriver(BaseDriver):
             if dst_dir.children.filter(name=inode.name).count():
                 raise Exception('%s is already present in %s' % (inode.name,
                                                              dst_dir.name))
-            new_inode = self._copy_inode(inode, dst_dir)
+            new_inode = inode.clone(parent=dst_dir)
             added.append(new_inode.info(user))
             if cut == '1':
                 if not inode.has_perm('remove', user):
