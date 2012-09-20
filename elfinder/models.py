@@ -24,8 +24,28 @@ class INode(MPTTModel):
     created = utils.AutoCreatedField(_('Created'))
     modified = utils.AutoLastModifiedField(_('Modified'))
 
+
+class INodeMixin(object):
+    """
+    This mixin take advantage of the MPTTModel functionalities to provide
+    methods for files and folder instances
+    """
+    def get_ancestors(self):
+        return [inode.folder for inode in 
+                INode.get_ancestors(self.inode)]
+
+    def get_children(self):
+        # inodes list of children
+        children = INode.get_children(self.inode)
+        files = [inode.file for inode in 
+                 children if inode.itype == INode.TYPES.file]
+        folders = [inode.file for inode in 
+                 children if inode.itype == INode.TYPES.folder]
+        key = lambda x: x.name
+        return sorted(folders, key=key) + sorted(files, key=key)
+
     
-class Folder(models.Model):
+class Folder(models.Model, INodeMixin):
     """
     This class has a onetoonefield with the Inode MTTPModel to mantain
     the relation between inodes and folder instances. When a folder is created 
@@ -43,10 +63,11 @@ class Folder(models.Model):
         # the first save create the related inode
         if not self.pk:
             self.inode = INode.objects.create(
-                parent=parent.inode, itype=INode.TYPES.folder, owner=owne        return super(Folder, self).save(**kwargs)
+                parent=parent.inode, itype=INode.TYPES.folder, owner=owner)
+        return super(Folder, self).save(**kwargs)
 
         
-class File(models.Model):
+class File(models.Model, INodeMixin):
     name = models.CharField(_('Name'), max_length=256)
     inode = models.OneToOneField('elfinder.inode', related_name='file')
     raw = models.FileField(_('File data'), max_length=512, 
