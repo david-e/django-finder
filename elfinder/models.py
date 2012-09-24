@@ -394,3 +394,14 @@ class Image(File):
             inf['dim'] = '%sx%s' % (self.width, self.height)
         inf['tmb'] = self.thumb
         return inf
+
+        
+class PDFDocument(File):
+
+    class Meta:
+        verbose_name = _('PDF document')
+        verbose_name_plural = ('PDF documents')
+
+    class FileMeta:
+        mimetypes = ['application/pdf']
+    

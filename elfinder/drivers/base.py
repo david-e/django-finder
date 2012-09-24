@@ -271,11 +271,6 @@ class FinderDriver(BaseDriver):
             if not inode.has_perm('read', user):
                 raise PermissionDenied('You do not have permission \
                                         to read %s' % inode.name)
-            # check if inode.name is not already present in destination folder
-            if self.folder_model.objects.filter(
-                    name=inode.name, parent=inode.parent).count():
-                raise Exception('%s is already present in %s' % (inode.name,
-                                                             dst_dir.name))
             new_inode = inode.clone(parent=dst_dir)
             added.append(new_inode.info(user))
             if cut == '1':
@@ -307,8 +302,7 @@ class FinderDriver(BaseDriver):
                 raise Exception('File %s already exists here!' % filename)
             # guess_type return a tuple (mimetype, extensions)
             mimetype = mimetypes.guess_type(filename)[0]
-            FileKlass = models.MIMETYPES.get(mimetype,
-                                                       self.file_model)
+            FileKlass = models.MIMETYPES.get(mimetype, self.file_model)
             obj = FileKlass(
                 name=filename,
                 parent=parent,
