@@ -112,16 +112,26 @@ def get_available_name(path, basename):
     filename = os.path.join(path, basename)
     name, ext = os.path.splitext(filename)
     while os.path.exists(filename):
-        filename = os.path.join(path, '%s%02d%s' % (name, i, ext))
+        filename = '%s%02d%s' % (name, i, ext)
         i += 1
     return filename
 
 
-def get_upload_path(instance, filename):
+def get_upload_path(instance, filename, rel_path=None):
     """
     This method creates a folder structure with the form yyyy/mm/dd to 
     save files.
     """
     now = datetime.now()
-    path = os.path.join(settings.MEDIA_ROOT, now.strftime('%Y/%m/%d'))
-    return get_available_name(path, filename)
+    path = os.path.join(
+        settings.MEDIA_ROOT, 
+        now.strftime('%Y/%m/%d'),
+        rel_path or '',
+    )
+    if not os.path.exists(path):
+        os.makedirs(path)
+    return get_available_name(path, os.path.basename(filename))
+
+    
+def get_url(filename):
+    return '/' + filename.replace(settings.MEDIA_ROOT, settings.MEDIA_URL)
