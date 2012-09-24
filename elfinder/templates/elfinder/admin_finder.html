@@ -116,30 +116,14 @@ ad i18n %}{% load admin_static %}
 <script type="text/javascript" charset="utf-8">
     $().ready(function() {
         var elf = $('#elfinder').elfinder({
-            url : '{% url elfinder_connector coll_id|default:0 %}',
+            url : '{% url elfinder:connector root|default:1 %}',
             places : 'h',
             rememberLastDir : false,
             placesFirst : false,
             requestType: 'post',
             customData : { csrfmiddlewaretoken : '{{ csrf_token }}',  },
-            uiOptions : { toolbar : [ 
-                            ['back', 'forward'],
-                            ['download', 'mkdir', 'mkfile', 'upload'],
-                            ['copy', 'cut', 'paste'],
-                            ['rm'],
-                            ['rename'],
-                            ['view'],
-                         ]
-                        },
-            contextmenu : { navbar : ['open', '|', 'copy', 'cut', 'paste', '|',
-                                      'rm'],
-                            cwd : ['reload', 'back', '|',
-                                   'mkdir', 'mkfile', 'paste', '|',
-                                   'upload'],
-                            files : ['edit', 'open', '|',
-                                     'copy', 'cut', 'paste', '|',
-                                     'rm', 'rename'],
-                          }
+            uiOptions : {{ uioptions|safe }},
+            contextmenu : {{ contextmenu|safe }}
         }).elfinder('instance');            
     });
 </script>

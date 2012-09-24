@@ -124,7 +124,6 @@ def get_upload_path(instance, filename, rel_path=None):
     """
     now = datetime.now()
     path = os.path.join(
-        settings.MEDIA_ROOT, 
         now.strftime('%Y/%m/%d'),
         rel_path or '',
     )
@@ -134,4 +133,4 @@ def get_upload_path(instance, filename, rel_path=None):
 
     
 def get_url(filename):
-    return '/' + filename.replace(settings.MEDIA_ROOT, settings.MEDIA_URL)
+    return filename.replace(settings.MEDIA_ROOT, settings.MEDIA_URL)

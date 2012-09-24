@@ -1,9 +1,10 @@
+from django.conf import settings
 from django.contrib.auth.models import Permission, User
 from django.core.exceptions import FieldError
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
 
-from mptt.models import MPTTModel, TreeForeignKey
+from mptt.models import MPTTModel, TreeForeignKey, TreeManager
 
 import Image as PILimage
 import os
@@ -55,7 +56,17 @@ class FileOptions(object):
                 setattr(cls, 'has_%s_permission' % perm, func)
         for mimetype in self.mimetypes:
             MIMETYPES[mimetype] = cls
-            
+
+
+class INodeManager(TreeManager):
+
+    def get_hash(self, target_hash):
+        """
+        In this implementation hash is the inode primary key,
+        but this method hides the magic.
+        """
+        return self.get(pk=target_hash).get_rel_type()
+
 
 class INode(MPTTModel):
     """
@@ -75,6 +86,8 @@ class INode(MPTTModel):
     created = utils.AutoCreatedField(_('Created'))
     modified = utils.AutoLastModifiedField(_('Modified'))
 
+    objects = INodeManager()
+
     def get_rel_type(self):
         obj = self
         for klass in self.related_type.split('.'):
@@ -90,6 +103,35 @@ class FileModelBase(models.base.ModelBase):
         new_class.add_to_class('_file_meta', FileOptions(file_meta))
         return new_class
 
+
+class FileManager(models.Manager):
+
+    def _correct_kwargs(self, **kwargs):
+        k = kwargs.copy()
+        parent = k.pop('parent', None)
+        if parent:
+            p_inode = getattr(parent, 'inode', None)
+            k['inode__parent'] = p_inode
+        owner = k.pop('owner', None)
+        if owner:
+            kwargs['inode_owner'] = owner
+        return k
+
+    def get(self, **kwargs):
+        k = self._correct_kwargs(**kwargs)
+        return super(FileManager, self).get(**k)
+
+    def filter(self, **kwargs):
+        k = self._correct_kwargs(**kwargs)
+        return super(FileManager, self).filter(**k)
+
+    def get_or_create(self, *args, **kwargs):
+        try:
+            folder = self.get(**kwargs)
+            return folder, False
+        except Folder.DoesNotExist:
+            return self.create(*args, **kwargs), True
+                  
         
 class BaseFile(models.Model):
     """
@@ -107,6 +149,8 @@ class BaseFile(models.Model):
     PERMISSIONS = ('read', 'write', 'execute', 'remove', 'add')
     
     name = models.CharField(_('Name'), max_length=256)
+
+    objects = FileManager()
     
     class Meta:
         abstract = True
@@ -141,10 +185,7 @@ class BaseFile(models.Model):
         return rel_name
         
     def _get_inodes_type(self, inodes):
-        return sorted(
-            map(lambda i: i.get_rel_type(), inodes),
-            key= lambda x: x.name
-        )
+        return map(lambda i: i.get_rel_type(), inodes)
 
     def has_perm(self, perm, user):
         perm_function = 'has_%s_permission' % perm
@@ -171,9 +212,19 @@ class BaseFile(models.Model):
         # delete relative inode also
         self.inode.delete()
 
-    @property
-    def parent(self):
-        return getattr(self.inode.parent, 'folder', None)
+    def clone(self, parent, **kwargs):
+        initial = {'parent': parent}
+        for f in self._meta.fields:
+            if (isinstance(f, models.AutoField) or
+                    isinstance(f, models.OneToOneField)):
+                continue
+            key = f.name
+            if isinstance(f, models.FileField):
+                base = getattr(getattr(self, f.name), 'name')
+            else:
+                base = getattr(self, f.name)
+            initial[key] = kwargs.get(key, base)
+        return self.__class__.objects.create(**initial)
     
     def get_ancestors(self):
         ancestors = INode.get_ancestors(self.inode)
@@ -186,7 +237,11 @@ class BaseFile(models.Model):
 
     def get_siblings(self):
         siblings = INode.get_siblings(self.inode)
-        self._get_inodes_type(siblings)
+        return self._get_inodes_type(siblings)
+
+    @property
+    def parent(self):
+        return getattr(self.inode.parent, 'folder', None)
 
 
 class ElfinderMixin(object):
@@ -206,6 +261,10 @@ class ElfinderMixin(object):
         if hasattr(self, 'raw'):
             return self.raw.size
         return 0
+
+    @property
+    def total_size(self):
+        return self.size
 
     @property
     def mimetype(self):
@@ -265,6 +324,19 @@ class Folder(BaseFile, ElfinderMixin):
     class FileMeta:
         mimetypes = ['directory']
 
+    @property
+    def total_size(self):
+        s = 0
+        # size from all subdirectories
+        for item in self.get_children():
+            s += item.total_size
+        return s
+
+    def info(self, user=None):
+        i = super(Folder, self).info(user)
+        i['dirs'] = Folder.objects.filter(parent=self).count()
+        return i     
+
 
 class File(BaseFile, ElfinderMixin):    
     inode = models.OneToOneField('elfinder.inode')
@@ -308,8 +380,9 @@ class Image(File):
             img = PILimage.open(self.raw)
             self.width, self.height = img.size
             img.thumbnail((128, 128))
-            thumbname = utils.get_upload_path(
-                self, '128x128_%s' % self.raw, rel_path='thumbs')
+            thumbname = os.path.join(settings.MEDIA_ROOT, 
+                utils.get_upload_path(self, '128x128_%s' % self.raw, 
+                rel_path='thumbs'))
             img.save(thumbname, 'JPEG')
             # get a valid url starting from a file system path
             self.thumb = utils.get_url(thumbname)
